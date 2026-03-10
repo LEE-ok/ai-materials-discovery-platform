@@ -1,6 +1,5 @@
 # AI Materials Discovery Platform
 
-test 적기
 
 AI 기반 계산 재료 탐색(Materials Discovery) 및 물성 예측(Property Prediction)을 위한 연구성 프로젝트입니다.
 
