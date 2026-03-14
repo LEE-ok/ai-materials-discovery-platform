@@ -21,14 +21,21 @@ from matplotlib.figure import Figure
 import matplotlib.font_manager as fm
 import seaborn as sns
 
-# 한글 폰트 설정 (Windows: 맑은 고딕 사용)
-try:
-    font_path = "C:/Windows/Fonts/malgun.ttf"
-    font_name = fm.FontProperties(fname=font_path).get_name()
+# 한글 폰트 설정 (Windows/Linux/Mac 공용 가용 폰트 검색)
+def get_korean_font():
+    korean_fonts = [
+        "Malgun Gothic", "AppleGothic", "NanumGothic", "NanumBarunGothic", 
+        "Gulim", "Dotum", "Arial"
+    ]
+    for font in korean_fonts:
+        if font in [f.name for f in fm.fontManager.ttflist]:
+            return font
+    return None
+
+font_name = get_korean_font()
+if font_name:
     matplotlib.rc('font', family=font_name)
     matplotlib.rc('axes', unicode_minus=False) # 마이너스 기호 깨짐 방지
-except Exception:
-    pass # 폰트 설정 실패 시 기본 폰트 사용
 
 class TrainingThread(QThread):
     """
@@ -1128,7 +1135,8 @@ class AIMaterialPlatform(QMainWindow):
         ax.set_title('AI 추천 최적 소재 배합 비율', fontsize=12, fontweight='bold', pad=15)
         ax.grid(axis='x', linestyle='--', alpha=0.5)
         
-        self.opt_figure.tight_layout()
+        # 그래프 간격 및 레이아웃 최적화
+        self.opt_figure.tight_layout(pad=1.5)
         self.opt_canvas.draw()
 
     def _update_opt_progress(self, current, total):
@@ -1154,6 +1162,12 @@ class AIMaterialPlatform(QMainWindow):
 
 def launch_gui():
     """애플리케이션을 구동하는 메인 함수입니다."""
+    # 고해상도(High DPI) 모니터 지원 설정
+    if hasattr(Qt.ApplicationAttribute, 'AA_EnableHighDpiScaling'):
+        QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
+    if hasattr(Qt.ApplicationAttribute, 'AA_UseHighDpiPixmaps'):
+        QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
+        
     app = QApplication(sys.argv)
     # 기본 스타일을 좀 더 모던한 Fusion 으로 설정
     app.setStyle("Fusion") 

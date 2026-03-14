@@ -7,9 +7,17 @@ class StmechDataParser:
     """
     실제 제공받은 데이터셋(stmech_aus_ss.xls)을 불러오고 전처리(Pre-processing)하는 역할을 담당하는 파서(Parser) 클래스입니다.
     """
-    def __init__(self, filepath: str = 'data/stmech_aus_ss.xls'):
-        # 파일 경로 초기화
-        self.filepath = filepath
+    def __init__(self, filepath: str = None):
+        # Resolve path relative to this file to ensure it works from any directory
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+        if filepath is None:
+            self.filepath = os.path.join(base_dir, "data", "stmech_aus_ss.xls")
+        else:
+            # If the user provides a path, try to resolve it; if relative, assume relative to project root or use as is
+            if not os.path.isabs(filepath):
+                self.filepath = os.path.join(base_dir, filepath)
+            else:
+                self.filepath = filepath
         
         # 모델의 안정적인 학습을 위해 입력(X)과 출력(y) 스케일러(StandardScaler)를 사용합니다 (정규화 진행)
         self.scaler_X = StandardScaler()
@@ -29,10 +37,17 @@ class StmechDataParser:
     def load_and_preprocess(self, custom_path: str = None):
         """데이터셋을 엑셀 파일로부터 읽어와 정제하는 메인 함수입니다."""
         target_path = custom_path if custom_path else self.filepath
-        print(f"{target_path} 에서 데이터 로딩 중 (Loading data)...")
+        # Ensure target_path is absolute if it's not
+        if not os.path.isabs(target_path):
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+            target_path = os.path.join(base_dir, target_path)
+
+        print(f"[{os.getcwd()}] -> {target_path} 에서 데이터 로딩 중 (Loading data)...")
         try:
+            if not os.path.exists(target_path):
+                raise FileNotFoundError(f"데이터 파일을 찾을 수 없습니다: {target_path}")
+
             # 엑셀 파일의 헤더(열 이름)가 6번째 행에 위치하므로 header=5 (index 기준) 옵션을 줍니다.
-            # 파일 확장자에 따라 엔진을 명시적으로 지정하여 예상치 못한 중단을 방지합니다.
             engine = 'xlrd' if target_path.endswith('.xls') else 'openpyxl'
             df = pd.read_excel(target_path, header=5, engine=engine)
             
@@ -48,11 +63,9 @@ class StmechDataParser:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
                 else:
-                    # 만약 엑셀에 해당 컬럼이 아예 없다면 임의로 0.0을 채워넣어 에러를 방지합니다.
                     df[col] = 0.0 
 
             # 숫자형 변환 중 문자가 있었거나 원래 빈 값이었던 데이터(NaN)들은 해당 컬럼의 '중간값(Median)'으로 채워줍니다.
-            # 데이터 손실을 막기 위한 전처리 기법 중 하나입니다.
             df[self.features] = df[self.features].fillna(df[self.features].median())
             
             # 최종적으로 모델에 들어갈 X(입력 데이터)와 y(정답 데이터)를 추출합니다.
@@ -61,13 +74,12 @@ class StmechDataParser:
             
             print(f"전처리 완료된 데이터 형태: X={X_df.shape}, y={y_df.shape}")
             
-            # NumPy 배열 형태로 X의 값, y의 값, 그리고 사용한 특성들의 이름 리스트를 반환합니다.
             return X_df.values, y_df.values, self.features
 
         except Exception as e:
-            print(f"데이터 로딩 중 에러 발생: {e}")
-            # 에러가 나서 엑셀 파일을 읽지 못했을 경우, 시스템이 다운되지 않도록 랜덤(가짜) 데이터를 대신 반환합니다.
-            return np.random.rand(100, len(self.features)), np.random.rand(100, 1) * 300 + 200, self.features
+            print(f"데이터 로딩 중 치명적 에러 발생: {e}")
+            # 가짜 데이터를 반환하는 대신 에러를 발생시켜 사용자가 알 수 있게 함 (인터페이스 대응 필요)
+            raise e
             
     def fit_transform(self, X, y):
         """데이터 전체를 가지고 정규화(Standard Scaling) 기준점을 학습(fit)함과 동시에 변환(transform)합니다."""

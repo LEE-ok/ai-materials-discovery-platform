@@ -7,6 +7,40 @@ import time
 # Force legacy Keras to avoid conflicts between Keras 3 and TFP
 os.environ['TF_USE_LEGACY_KERAS'] = '1'
 
+def install_dependencies():
+    """Check and install missing requirements."""
+    import subprocess
+    import pkg_resources
+    
+    requirements_path = os.path.join(os.path.dirname(__file__), 'requirements.txt')
+    if not os.path.exists(requirements_path):
+        return
+
+    print("Checking dependencies...")
+    with open(requirements_path, 'r') as f:
+        requirements = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+
+    missing = []
+    for requirement in requirements:
+        try:
+            pkg_resources.require(requirement)
+        except (pkg_resources.DistributionNotFound, pkg_resources.VersionConflict):
+            missing.append(requirement)
+
+    if missing:
+        print(f"Missing libraries found: {', '.join(missing)}")
+        print("Installing missing libraries (this may take a while)...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install"] + missing)
+            print("Successfully installed all dependencies.")
+        except Exception as e:
+            print(f"Failed to install dependencies automatically: {e}")
+            print("Please run 'pip install -r requirements.txt' manually.")
+
+# Perform dependency check before any other imports that might fail
+if __name__ == '__main__':
+    install_dependencies()
+
 def start_api_server():
     """Start the Flask API server."""
     print("Initializing Flask API server...")
