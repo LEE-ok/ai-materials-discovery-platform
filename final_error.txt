@@ -1,0 +1,17 @@
+Traceback (most recent call last):
+  File "C:\ai_project\ai-materials-discovery-platform\main.py", line 56, in <module>
+    main()
+  File "C:\ai_project\ai-materials-discovery-platform\main.py", line 44, in main
+    start_gui_client()
+  File "C:\ai_project\ai-materials-discovery-platform\main.py", line 21, in start_gui_client
+    launch_gui()
+  File "C:\ai_project\ai-materials-discovery-platform\src\gui\main_window.py", line 935, in launch_gui
+    window = AIMaterialPlatform()
+             ^^^^^^^^^^^^^^^^^^^^
+  File "C:\ai_project\ai-materials-discovery-platform\src\gui\main_window.py", line 224, in __init__
+    self._init_eda_tab() # 신설: 정밀 데이터 분석 탭
+    ^^^^^^^^^^^^^^^^^^^^
+  File "C:\ai_project\ai-materials-discovery-platform\src\gui\main_window.py", line 280, in _init_eda_tab
+    self.element_list = QListWidget()
+                        ^^^^^^^^^^^
+NameError: name 'QListWidget' is not defined. Did you mean: 'QTabWidget'?
