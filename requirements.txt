@@ -1,0 +1,10 @@
+tensorflow
+tensorflow-probability
+pandas
+xlrd
+pyqt6
+flask
+matplotlib
+seaborn
+scikit-learn
+numpy
