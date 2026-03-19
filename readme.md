@@ -32,3 +32,4 @@ ai-materials-discovery-platform/
 
 ## 참고
 - 빈 디렉터리 유지를 위해 각 폴더에 `.gitkeep` 파일이 포함되어 있습니다.
+- 브랜치/PR 운영 규칙은 `CONTRIBUTING.md`를 참고하세요.
