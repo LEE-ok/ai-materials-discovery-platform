@@ -1,0 +1,129 @@
+# Data quality policy for austenitic stainless-steel datasets.
+
+version: 1
+dataset_name: "Austenitic Stainless Steel"
+
+schema:
+  # Header row for provided STMECH_AUS_SS.xls style files.
+  excel_header_row: 5
+  required_columns:
+    - "Cr"
+    - "Ni"
+    - "Mo"
+    - "Mn"
+    - "Si"
+    - "Nb"
+    - "Ti"
+    - "Zr"
+    - "Ta"
+    - "V"
+    - "W"
+    - "Cu"
+    - "N"
+    - "C"
+    - "B"
+    - "P"
+    - "S"
+    - "Co"
+    - "Al"
+    - "Sn"
+    - "Pb"
+    - "Solution_treatment_temperature"
+    - "Solution_treatment_time(s)"
+    - "Water_Quenched_after_s.t."
+    - "Air_Quenched_after_s.t."
+    - "Grains mm-2"
+    - "Type of melting"
+    - "Size of ingot"
+    - "Product form"
+    - "Temperature (K)"
+    - "0.2%proof_stress (M Pa)"
+    - "UTS (M Pa)"
+    - "Elongation (%)"
+    - "Area_reduction (%)"
+
+targets:
+  names:
+    - "0.2%proof_stress (M Pa)"
+    - "UTS (M Pa)"
+    - "Elongation (%)"
+    - "Area_reduction (%)"
+
+composition:
+  wt_columns:
+    - "Cr"
+    - "Ni"
+    - "Mo"
+    - "Mn"
+    - "Si"
+    - "Nb"
+    - "Ti"
+    - "Zr"
+    - "Ta"
+    - "V"
+    - "W"
+    - "Cu"
+    - "N"
+    - "C"
+    - "B"
+    - "P"
+    - "S"
+    - "Co"
+    - "Al"
+    - "Sn"
+    - "Pb"
+  wt_sum_upper: 100.0
+  wt_sum_tolerance: 0.5
+  austenitic_family_bounds:
+    cr_min: 16.0
+    cr_max: 28.0
+    ni_min: 3.5
+    ni_max: 32.0
+
+physical_bounds:
+  min_zero_columns:
+    - "Cr"
+    - "Ni"
+    - "Mo"
+    - "Mn"
+    - "Si"
+    - "Nb"
+    - "Ti"
+    - "Zr"
+    - "Ta"
+    - "V"
+    - "W"
+    - "Cu"
+    - "N"
+    - "C"
+    - "B"
+    - "P"
+    - "S"
+    - "Co"
+    - "Al"
+    - "Sn"
+    - "Pb"
+    - "Solution_treatment_temperature"
+    - "Solution_treatment_time(s)"
+    - "Grains mm-2"
+    - "Temperature (K)"
+  binary_columns:
+    - "Water_Quenched_after_s.t."
+    - "Air_Quenched_after_s.t."
+
+missing:
+  critical_feature_columns:
+    - "Cr"
+    - "Ni"
+    - "C"
+    - "N"
+    - "Temperature (K)"
+    - "Solution_treatment_temperature"
+  max_missing_ratio_features: 0.30
+
+scoring:
+  initial_score: 100
+  hard_fail_penalty: 100
+  soft_fail_penalty: 20
+  pass_min_score: 80
+  hold_min_score: 60

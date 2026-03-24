@@ -1,0 +1,18 @@
+{
+  "rows_total": 2180,
+  "rows_pass": 2090,
+  "rows_hold": 90,
+  "rows_reject": 0,
+  "schema": {
+    "required_count": 34,
+    "missing_required_count": 0,
+    "missing_required_columns": [],
+    "schema_ok": true
+  },
+  "output_files": {
+    "validation_report": "outputs/validation/validation_report.csv",
+    "train_set": "outputs/validation/train_set.csv",
+    "holdout_review": "outputs/validation/holdout_review.csv",
+    "reject_set": "outputs/validation/reject_set.csv"
+  }
+}

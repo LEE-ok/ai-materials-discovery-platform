@@ -5,9 +5,9 @@ import numpy as np
 import joblib
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QLabel, QLineEdit, QTabWidget, QFileDialog, 
-                             QFormLayout, QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView, QComboBox, QSpinBox)
+                             QFormLayout, QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView, QComboBox, QSpinBox, QMessageBox)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont, QIcon
+from PyQt6.QtGui import QFont, QIcon, QColor
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import seaborn as sns
@@ -41,6 +41,13 @@ class TrainingThread(QThread):
             except Exception as e:
                 self.finished.emit(f"엑셀 파일을 읽는 중 오류 발생: {str(e)}")
                 return
+
+            validation = self.data_engine.validation_summary or {}
+            if validation:
+                self.progress.emit(
+                    f"정합성 검증 결과 - pass:{validation.get('rows_pass', 0)} "
+                    f"hold:{validation.get('rows_hold', 0)} reject:{validation.get('rows_reject', 0)}"
+                )
                 
             X_train, X_test, y_train, y_test, X_raw_test, y_raw_test = self.data_engine.preprocess_data()
             
@@ -73,7 +80,8 @@ class TrainingThread(QThread):
                 "model": model_engine,
                 "metrics": {"r2": r2, "mae": mae},
                 "y_test": y_raw_test,
-                "y_pred": y_pred
+                "y_pred": y_pred,
+                "validation_summary": validation
             }
             self.finished.emit(results)
         except Exception as e:
@@ -119,6 +127,7 @@ class MainWindow(QMainWindow):
         self.setup_training_tab()
         self.setup_performance_tab() # New performance tab
         self.setup_inference_tab()
+        self.setup_validation_tab()
         self.setup_analysis_tab()
 
     def setup_training_tab(self):
@@ -325,6 +334,86 @@ class MainWindow(QMainWindow):
         
         self.tabs.addTab(tab, "데이터 관계 분석")
 
+    def setup_validation_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        header = QLabel("데이터 정합성 검증 결과")
+        header.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        layout.addWidget(header)
+
+        self.validation_summary_label = QLabel(
+            "학습 실행 후 정합성 결과가 표시됩니다.\n"
+            "pass/hold/reject 건수와 hold/reject 상세 행을 확인할 수 있습니다."
+        )
+        self.validation_summary_label.setStyleSheet(
+            "background-color: #f8f9fa; border: 1px solid #dfe6e9; padding: 10px; border-radius: 5px;"
+        )
+        layout.addWidget(self.validation_summary_label)
+
+        self.validation_table = QTableWidget()
+        self.validation_table.setColumnCount(6)
+        self.validation_table.setHorizontalHeaderLabels(
+            ["Status", "Cr", "Ni", "Temp(K)", "Reason Codes", "Reason Detail"]
+        )
+        self.validation_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.validation_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.validation_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.validation_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.validation_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        self.validation_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.validation_table, 1)
+
+        self.tabs.addTab(tab, "정합성 검증")
+
+    def refresh_validation_tab(self):
+        report = getattr(self.data_engine, "validation_report_df", None)
+        summary = getattr(self.data_engine, "validation_summary", None)
+
+        if summary is None:
+            self.validation_summary_label.setText(
+                "학습 실행 후 정합성 결과가 표시됩니다.\n"
+                "pass/hold/reject 건수와 hold/reject 상세 행을 확인할 수 있습니다."
+            )
+            self.validation_table.setRowCount(0)
+            return
+
+        self.validation_summary_label.setText(
+            f"총 {summary.get('rows_total', 0)}건 | "
+            f"pass {summary.get('rows_pass', 0)}건 | "
+            f"hold {summary.get('rows_hold', 0)}건 | "
+            f"reject {summary.get('rows_reject', 0)}건"
+        )
+
+        if report is None or report.empty:
+            self.validation_table.setRowCount(0)
+            return
+
+        show_df = report[report["quality_status"].isin(["hold", "reject"])].copy()
+        if show_df.empty:
+            self.validation_table.setRowCount(0)
+            return
+
+        cols = ["quality_status", "Cr", "Ni", "Temperature (K)", "quality_reason_codes", "quality_reason_detail"]
+        for c in cols:
+            if c not in show_df.columns:
+                show_df[c] = ""
+        show_df = show_df[cols].head(300)
+
+        self.validation_table.setRowCount(len(show_df))
+        for r, (_, row) in enumerate(show_df.iterrows()):
+            status_item = QTableWidgetItem(str(row["quality_status"]))
+            if row["quality_status"] == "reject":
+                status_item.setBackground(QColor("#ffb3b3"))
+            elif row["quality_status"] == "hold":
+                status_item.setBackground(QColor("#fff3b0"))
+            self.validation_table.setItem(r, 0, status_item)
+            self.validation_table.setItem(r, 1, QTableWidgetItem(str(row["Cr"])))
+            self.validation_table.setItem(r, 2, QTableWidgetItem(str(row["Ni"])))
+            self.validation_table.setItem(r, 3, QTableWidgetItem(str(row["Temperature (K)"])))
+            self.validation_table.setItem(r, 4, QTableWidgetItem(str(row["quality_reason_codes"])))
+            self.validation_table.setItem(r, 5, QTableWidgetItem(str(row["quality_reason_detail"])))
+
     def on_analysis_clicked(self):
         try:
             if not self.data_engine.file_path or not os.path.exists(self.data_engine.file_path):
@@ -388,6 +477,7 @@ class MainWindow(QMainWindow):
             self.data_engine.set_file_path(file_path)
             self.file_path_label.setText(f"File: {os.path.basename(file_path)}")
             self.status_label.setText("Status: New file selected. Ready to train.")
+            self.refresh_validation_tab()
 
     def load_existing_model(self):
         if os.path.exists("models/data_engine.pkl") and os.path.exists("models/material_model.pkl"):
@@ -424,11 +514,27 @@ class MainWindow(QMainWindow):
         self.train_btn.setEnabled(True)
         if isinstance(results, str):
             self.status_label.setText(f"상태: 오류 발생 - {results}")
+            self.refresh_validation_tab()
             return
             
         self.model_engine = results["model"]
+        validation = results.get("validation_summary", {})
         self.status_label.setText(f"상태: {self.model_type} 학습 완료 및 저장됨")
         self.update_active_model_display()
+        self.refresh_validation_tab()
+
+        if validation and validation.get("rows_hold", 0) > 0:
+            QMessageBox.warning(
+                self,
+                "데이터 정합성 경고",
+                (
+                    f"정합성 검증 경고 데이터가 있습니다.\n"
+                    f"pass: {validation.get('rows_pass', 0)}\n"
+                    f"hold: {validation.get('rows_hold', 0)}\n"
+                    f"reject: {validation.get('rows_reject', 0)}\n\n"
+                    f"hold 데이터는 리뷰 후 학습 반영 여부를 결정하는 것을 권장합니다."
+                )
+            )
         
         metrics = results["metrics"]
         # Simplify metrics for user
