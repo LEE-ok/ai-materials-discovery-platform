@@ -1,6 +1,5 @@
 # AI Materials Discovery Platform
 
-
 AI 기반 계산 재료 탐색(Materials Discovery) 및 물성 예측(Property Prediction)을 위한 연구성 프로젝트입니다.
 
 ## 프로젝트 목적
@@ -32,4 +31,3 @@ ai-materials-discovery-platform/
 
 ## 참고
 - 빈 디렉터리 유지를 위해 각 폴더에 `.gitkeep` 파일이 포함되어 있습니다.
-- 브랜치/PR 운영 규칙은 `CONTRIBUTING.md`를 참고하세요.
