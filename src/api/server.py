@@ -11,10 +11,15 @@ app = Flask(__name__)
 data_engine = None
 model_engine = None
 
+def get_model_paths():
+    model_dir = os.getenv("AIMD_MODEL_DIR", "models")
+    model_path = os.path.join(model_dir, "material_model.pkl")
+    engine_path = os.path.join(model_dir, "data_engine.pkl")
+    return model_path, engine_path
+
 def load_resources():
     global data_engine, model_engine
-    model_path = "models/material_model.pkl" # Changed extension to pkl for joblib consistency
-    engine_path = "models/data_engine.pkl"
+    model_path, engine_path = get_model_paths()
     
     if os.path.exists(engine_path):
         data_engine = joblib.load(engine_path)

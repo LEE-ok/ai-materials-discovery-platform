@@ -13,15 +13,18 @@ AI 기반 계산 재료 탐색(Materials Discovery) 및 물성 예측(Property P
 ```text
 ai-materials-discovery-platform/
 ├── notebooks/      # 실험/분석용 Jupyter 노트북
-├── data/
-│   ├── raw/        # 원본 데이터
-│   └── processed/  # 전처리/가공 데이터
+├── data/           # (선택) 샘플/참고 데이터 보관용
 ├── src/            # 재사용 가능한 Python 모듈
 ├── models/         # 학습된 모델 및 체크포인트
 ├── outputs/        # 시각화, 로그, 예측 결과물
 ├── scripts/        # 학습/추론/유틸 실행 스크립트
 └── docs/           # 프로젝트 문서
 ```
+
+## 실행 시 데이터/저장 경로
+- 실행 시 학습 데이터(`.xls/.xlsx`)는 GUI에서 사용자가 직접 선택합니다.
+- 저장 폴더도 GUI에서 선택할 수 있으며, 선택한 위치에 `models/`와 `validation/` 결과가 생성됩니다.
+- 저장 폴더를 선택하지 않으면 기본값으로 프로젝트 내부 `models/`, `outputs/validation`을 사용합니다.
 
 ## 권장 워크플로우
 1. `notebooks/`에서 아이디어를 빠르게 검증합니다.

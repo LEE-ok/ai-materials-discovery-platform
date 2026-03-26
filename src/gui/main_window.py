@@ -27,15 +27,18 @@ class TrainingThread(QThread):
     finished = pyqtSignal(object)
     progress = pyqtSignal(str)
 
-    def __init__(self, data_engine, model_type='RF', max_iter=2000):
+    def __init__(self, data_engine, model_type='RF', max_iter=2000, model_dir="models", validation_out_dir="outputs/validation"):
         super().__init__()
         self.data_engine = data_engine
         self.model_type = model_type
         self.max_iter = max_iter
+        self.model_dir = model_dir
+        self.validation_out_dir = validation_out_dir
 
     def run(self):
         try:
             self.progress.emit("데이터 로딩 및 전처리 중...")
+            self.data_engine.set_validation_output_dir(self.validation_out_dir)
             try:
                 self.data_engine.load_data()
             except Exception as e:
@@ -64,9 +67,9 @@ class TrainingThread(QThread):
             history = model_engine.train(X_train, y_train)
             
             self.progress.emit("모델 저장 중...")
-            if not os.path.exists("models"): os.makedirs("models")
-            model_engine.save("models/material_model.pkl")
-            joblib.dump(self.data_engine, "models/data_engine.pkl")
+            os.makedirs(self.model_dir, exist_ok=True)
+            model_engine.save(os.path.join(self.model_dir, "material_model.pkl"))
+            joblib.dump(self.data_engine, os.path.join(self.model_dir, "data_engine.pkl"))
             
             self.progress.emit("성능 검증 중...")
             mean_scaled, std_scaled = model_engine.predict(X_test)
@@ -81,7 +84,9 @@ class TrainingThread(QThread):
                 "metrics": {"r2": r2, "mae": mae},
                 "y_test": y_raw_test,
                 "y_pred": y_pred,
-                "validation_summary": validation
+                "validation_summary": validation,
+                "model_dir": self.model_dir,
+                "validation_out_dir": self.validation_out_dir
             }
             self.finished.emit(results)
         except Exception as e:
@@ -104,6 +109,7 @@ class MainWindow(QMainWindow):
         self.data_engine = DataEngine(None)
         self.model_engine = None
         self.model_type = "RF" # Default
+        self.output_root_dir = None
         
         self.last_corr = None # For dynamic resizing of annotations
         self.init_ui()
@@ -147,6 +153,14 @@ class MainWindow(QMainWindow):
         self.select_file_btn = QPushButton("Select Data File (.xls/.xlsx)")
         self.select_file_btn.clicked.connect(self.on_select_file_clicked)
         info_layout.addWidget(self.select_file_btn)
+
+        self.output_path_label = QLabel("저장 폴더: 선택되지 않음 (기본: 프로젝트 폴더)")
+        self.output_path_label.setStyleSheet("font-size: 10px; color: #7f8c8d;")
+        info_layout.addWidget(self.output_path_label)
+
+        self.select_output_btn = QPushButton("Select Save Folder (Optional)")
+        self.select_output_btn.clicked.connect(self.on_select_output_dir_clicked)
+        info_layout.addWidget(self.select_output_btn)
         
         self.status_label = QLabel("상태: 데이터를 선택해 주세요")
         info_layout.addWidget(self.status_label)
@@ -479,12 +493,31 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Status: New file selected. Ready to train.")
             self.refresh_validation_tab()
 
+    def on_select_output_dir_clicked(self):
+        out_dir = QFileDialog.getExistingDirectory(self, "Select Save Folder")
+        if out_dir:
+            self.output_root_dir = out_dir
+            self.output_path_label.setText(f"저장 폴더: {out_dir}")
+            self.status_label.setText("상태: 저장 폴더가 설정되었습니다.")
+
+    def get_output_dirs(self):
+        if self.output_root_dir:
+            model_dir = os.path.join(self.output_root_dir, "models")
+            validation_out_dir = os.path.join(self.output_root_dir, "validation")
+        else:
+            model_dir = "models"
+            validation_out_dir = "outputs/validation"
+        return model_dir, validation_out_dir
+
     def load_existing_model(self):
-        if os.path.exists("models/data_engine.pkl") and os.path.exists("models/material_model.pkl"):
+        model_dir, _ = self.get_output_dirs()
+        model_engine_path = os.path.join(model_dir, "material_model.pkl")
+        data_engine_path = os.path.join(model_dir, "data_engine.pkl")
+        if os.path.exists(data_engine_path) and os.path.exists(model_engine_path):
             try:
-                self.data_engine = joblib.load("models/data_engine.pkl")
+                self.data_engine = joblib.load(data_engine_path)
                 self.model_engine = ModelEngine()
-                self.model_engine.load("models/material_model.pkl")
+                self.model_engine.load(model_engine_path)
                 self.model_type = self.model_engine.model_type
                 self.status_label.setText(f"상태: 기존 모델 로드 완료 ({self.model_type})")
                 self.update_active_model_display()
@@ -504,8 +537,15 @@ class MainWindow(QMainWindow):
         model_map = {0: 'RF', 1: 'GBM', 2: 'MLP', 3: 'TFP'}
         self.model_type = model_map.get(self.model_combo.currentIndex(), 'RF')
         max_iter = self.iter_spin.value()
+        model_dir, validation_out_dir = self.get_output_dirs()
         
-        self.thread = TrainingThread(self.data_engine, model_type=self.model_type, max_iter=max_iter)
+        self.thread = TrainingThread(
+            self.data_engine,
+            model_type=self.model_type,
+            max_iter=max_iter,
+            model_dir=model_dir,
+            validation_out_dir=validation_out_dir
+        )
         self.thread.progress.connect(lambda s: self.status_label.setText(f"상태: {s}"))
         self.thread.finished.connect(self.on_training_finished)
         self.thread.start()
@@ -519,7 +559,8 @@ class MainWindow(QMainWindow):
             
         self.model_engine = results["model"]
         validation = results.get("validation_summary", {})
-        self.status_label.setText(f"상태: {self.model_type} 학습 완료 및 저장됨")
+        model_dir = results.get("model_dir", "models")
+        self.status_label.setText(f"상태: {self.model_type} 학습 완료 및 저장됨 ({model_dir})")
         self.update_active_model_display()
         self.refresh_validation_tab()
 

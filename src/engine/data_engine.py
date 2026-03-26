@@ -31,9 +31,13 @@ class DataEngine:
         ]
         self.validation_report_df = None
         self.validation_summary = None
+        self.validation_out_dir = "outputs/validation"
         
     def set_file_path(self, path):
         self.file_path = path
+
+    def set_validation_output_dir(self, out_dir):
+        self.validation_out_dir = out_dir
 
     def load_data(self):
         if not self.file_path or not os.path.exists(self.file_path):
@@ -143,7 +147,9 @@ class DataEngine:
     def _persist_validation_outputs(self):
         if self.validation_report_df is None or self.validation_summary is None:
             return
-        out_dir = "outputs/validation"
+        out_dir = self.validation_out_dir
+        if not out_dir:
+            return
         os.makedirs(out_dir, exist_ok=True)
         self.validation_report_df.to_csv(os.path.join(out_dir, "gui_validation_report.csv"), index=False)
         with open(os.path.join(out_dir, "gui_validation_summary.json"), "w", encoding="utf-8") as f:
