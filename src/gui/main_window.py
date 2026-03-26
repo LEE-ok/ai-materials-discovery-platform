@@ -1,5 +1,7 @@
 import os
 import sys
+import json        # [분석 저장] 워크스페이스 저장/불러오기에 사용
+import datetime   # [LOG] 로그 기록 시간 저장용
 
 import joblib
 import matplotlib.pyplot as plt
@@ -134,6 +136,37 @@ class MainWindow(QMainWindow):
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header.setStyleSheet("color: #2c3e50; margin: 10px;")
         root_layout.addWidget(header)
+
+        # ================================================================
+        # [WORKSPACE] 분석 저장 UI - 헤더와 탭 사이에 위치
+        # 이름 입력 + 저장 / 드롭다운 선택 + 불러오기 + 삭제
+        # ================================================================
+        ws_layout = QHBoxLayout()
+        self.ws_name_input = QLineEdit()
+        self.ws_name_input.setPlaceholderText("분석 저장 이름 입력 (예: 실험A)")
+        self.ws_name_input.setFixedWidth(220)
+        save_ws_btn = QPushButton("저장")
+        save_ws_btn.setStyleSheet("background-color: #8e44ad; color: white; font-weight: bold; padding: 5px 12px;")
+        save_ws_btn.clicked.connect(self.save_workspace)
+        self.ws_combo = QComboBox()
+        self.ws_combo.setFixedWidth(220)
+        load_ws_btn = QPushButton("불러오기")
+        load_ws_btn.setStyleSheet("background-color: #16a085; color: white; font-weight: bold; padding: 5px 12px;")
+        load_ws_btn.clicked.connect(self.load_workspace)
+        delete_ws_btn = QPushButton("삭제")
+        delete_ws_btn.setStyleSheet("background-color: #e74c3c; color: white; font-weight: bold; padding: 5px 12px;")
+        delete_ws_btn.clicked.connect(self.delete_workspace)
+        ws_layout.addStretch()
+        ws_layout.addWidget(QLabel("분석 저장:"))
+        ws_layout.addWidget(self.ws_name_input)
+        ws_layout.addWidget(save_ws_btn)
+        ws_layout.addSpacing(20)
+        ws_layout.addWidget(self.ws_combo)
+        ws_layout.addWidget(load_ws_btn)
+        ws_layout.addWidget(delete_ws_btn)
+        root_layout.addLayout(ws_layout)
+        self.refresh_workspace_list()  # [WORKSPACE] 시작 시 기존 목록 로드
+        # ================================================================
 
         self.tabs = QTabWidget()
         root_layout.addWidget(self.tabs)
@@ -942,6 +975,20 @@ class MainWindow(QMainWindow):
         self.canvas.draw()
         self.render_performance_results(results)
 
+        # [AUTO SAVE] 학습 완료 시 auto_save/ 폴더에 자동 저장
+        self.auto_save_workspace()
+
+        # [LOG] 학습 완료 로그 기록
+        self.append_log({
+            "type": "학습",
+            "model": self.model_type,
+            "data_file": os.path.basename(self.data_engine.file_path or ""),
+            "r2_avg": round(float(np.mean(metrics["r2"])), 4),
+            "mae_avg": round(float(np.mean(metrics["mae"])), 4),
+            "r2_per_target": [round(float(v), 4) for v in metrics["r2"]],
+            "mae_per_target": [round(float(v), 4) for v in metrics["mae"]],
+        })
+
     def render_performance_results(self, results):
         self.perf_canvas.figure.clear()
         axes = self.perf_canvas.figure.subplots(2, 2)
@@ -1006,6 +1053,25 @@ class MainWindow(QMainWindow):
             self.prediction_canvas.axes.set_xticklabels(labels)
             self.prediction_canvas.axes.set_title("Predicted Properties")
             self.prediction_canvas.draw()
+
+            # [AUTO SAVE] 예측 완료 시 auto_save 폴더에 예측 그래프 저장
+            auto_folder = os.path.join("workspaces", "auto_save")
+            if os.path.exists(auto_folder):
+                self.prediction_canvas.fig.savefig(
+                    os.path.join(auto_folder, "prediction.png"), dpi=100, bbox_inches="tight")
+
+            # [LOG] 예측 실행 로그 기록
+            self.append_log({
+                "type": "예측",
+                "model": self.model_type,
+                "inputs": {k: v.text() for k, v in self.inputs.items()},
+                "results": {
+                    "yield_stress": round(float(mean[0]), 2),
+                    "uts": round(float(mean[1]), 2),
+                    "elongation": round(float(mean[2]), 2),
+                    "area_reduction": round(float(mean[3]), 2),
+                },
+            })
         except Exception as exc:
             self.result_display.setText(f"Error during prediction: {exc}")
 
@@ -1015,6 +1081,225 @@ class MainWindow(QMainWindow):
         self.active_model_info.setStyleSheet(
             "background-color: #d4efdf; padding: 10px; border: 1px solid #27ae60; border-radius: 5px; font-weight: bold; margin-bottom: 10px;"
         )
+
+    # ================================================================
+    # [AUTO SAVE] 학습 완료 시 workspaces/auto_save/ 폴더에 자동 저장 (1개만 유지, 덮어씀)
+    # ================================================================
+    def auto_save_workspace(self):
+        import shutil
+        folder = os.path.join("workspaces", "auto_save")
+        if os.path.exists(folder):
+            shutil.rmtree(folder)  # [AUTO SAVE] 오래된 auto_save 폴더 삭제
+        os.makedirs(folder)
+        state = {
+            "file_path": self.data_engine.file_path,
+            "model_combo_index": self.model_combo.currentIndex(),
+            "max_iter": self.iter_spin.value(),
+            "inputs": {k: v.text() for k, v in self.inputs.items()},
+            # [AUTO SAVE] 전처리 설정값 저장
+            "preprocessing": {
+                "missing_combo": self.missing_combo.currentIndex(),
+                "outlier_combo": self.outlier_combo.currentIndex(),
+                "invalid_type_combo": self.invalid_type_combo.currentIndex(),
+                "iqr_spin": self.iqr_spin.value(),
+                "training_input_combo": self.training_input_combo.currentIndex(),
+                "preprocessing_ready": self.preprocessing_ready,
+            },
+        }
+        with open(os.path.join(folder, "state.json"), "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+        self.canvas.fig.savefig(os.path.join(folder, "training.png"), dpi=100, bbox_inches="tight")
+        self.perf_canvas.figure.savefig(os.path.join(folder, "performance.png"), dpi=100, bbox_inches="tight")
+        # [AUTO SAVE] 전처리 결과 CSV 저장
+        pre_df = self.data_engine.get_preprocessed_display_df()
+        if not pre_df.empty:
+            pre_df.to_csv(os.path.join(folder, "preprocessed_data.csv"), index=False, encoding="utf-8-sig")
+        eng_df = self.data_engine.get_engineered_display_df()
+        if not eng_df.empty:
+            eng_df.to_csv(os.path.join(folder, "engineered_data.csv"), index=False, encoding="utf-8-sig")
+        # [AUTO SAVE] 예측 그래프는 예측 실행 시점에 별도 저장됨
+    # ================================================================
+
+    # ================================================================
+    # [LOG] workspaces/log.json 에 로그 항목 추가
+    # ================================================================
+    def append_log(self, entry):
+        ws_dir = "workspaces"
+        if not os.path.exists(ws_dir):
+            os.makedirs(ws_dir)
+        log_path = os.path.join(ws_dir, "log.json")
+        logs = []
+        if os.path.exists(log_path):
+            with open(log_path, "r", encoding="utf-8") as f:
+                logs = json.load(f)
+        entry["timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        logs.append(entry)
+        with open(log_path, "w", encoding="utf-8") as f:
+            json.dump(logs, f, ensure_ascii=False, indent=2)
+    # ================================================================
+
+    # ================================================================
+    # [WORKSPACE] 선택한 분석 저장 삭제 (폴더 단위 삭제)
+    # ================================================================
+    def delete_workspace(self):
+        import shutil
+        name = self.ws_combo.currentText()
+        if not name:
+            self.status_label.setText("상태: 삭제할 분석 저장을 선택해 주세요")
+            return
+        reply = QMessageBox.question(self, "삭제 확인",
+            f"'{name}' 분석 저장을 삭제하시겠습니까?\n(폴더 전체가 삭제됩니다)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.No:
+            return
+        folder = os.path.join("workspaces", name)
+        if os.path.exists(folder):
+            shutil.rmtree(folder)  # [WORKSPACE] 폴더 단위로 삭제
+        self.refresh_workspace_list()
+        self.status_label.setText(f"상태: 분석 저장 '{name}' 삭제 완료")
+    # ================================================================
+
+    # ================================================================
+    # [WORKSPACE] workspaces/ 내 폴더 목록을 드롭다운에 갱신 (auto_save 제외)
+    # ================================================================
+    def refresh_workspace_list(self):
+        ws_dir = "workspaces"
+        self.ws_combo.clear()
+        if os.path.exists(ws_dir):
+            names = sorted([d for d in os.listdir(ws_dir)
+                            if os.path.isdir(os.path.join(ws_dir, d)) and d != "auto_save"])
+            self.ws_combo.addItems(names)
+    # ================================================================
+
+    # ================================================================
+    # [WORKSPACE] 이름 입력 후 저장 → workspaces/{이름}/ 폴더에 저장
+    # ================================================================
+    def save_workspace(self):
+        name = self.ws_name_input.text().strip()
+        if not name:
+            self.status_label.setText("상태: 분석 저장 이름을 입력해 주세요")
+            return
+        folder = os.path.join("workspaces", name)
+        if os.path.exists(folder):
+            reply = QMessageBox.question(self, "덮어쓰기 확인",
+                f"'{name}' 분석 저장이 이미 존재합니다.\n덮어쓰시겠습니까?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if reply == QMessageBox.StandardButton.No:
+                return
+        else:
+            os.makedirs(folder)
+        # [WORKSPACE] 그래프 PNG 저장
+        self.canvas.fig.savefig(os.path.join(folder, "training.png"), dpi=100, bbox_inches="tight")
+        self.perf_canvas.figure.savefig(os.path.join(folder, "performance.png"), dpi=100, bbox_inches="tight")
+        self.prediction_canvas.fig.savefig(os.path.join(folder, "prediction.png"), dpi=100, bbox_inches="tight")
+        state = {
+            "file_path": self.data_engine.file_path,
+            "model_combo_index": self.model_combo.currentIndex(),
+            "max_iter": self.iter_spin.value(),
+            "inputs": {k: v.text() for k, v in self.inputs.items()},
+            # [WORKSPACE] 전처리 설정값 저장
+            "preprocessing": {
+                "missing_combo": self.missing_combo.currentIndex(),
+                "outlier_combo": self.outlier_combo.currentIndex(),
+                "invalid_type_combo": self.invalid_type_combo.currentIndex(),
+                "iqr_spin": self.iqr_spin.value(),
+                "training_input_combo": self.training_input_combo.currentIndex(),
+                "preprocessing_ready": self.preprocessing_ready,
+            },
+        }
+        with open(os.path.join(folder, "state.json"), "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+        # [WORKSPACE] 전처리 결과 / 합금 지표 결과 CSV 저장
+        pre_df = self.data_engine.get_preprocessed_display_df()
+        if not pre_df.empty:
+            pre_df.to_csv(os.path.join(folder, "preprocessed_data.csv"), index=False, encoding="utf-8-sig")
+        eng_df = self.data_engine.get_engineered_display_df()
+        if not eng_df.empty:
+            eng_df.to_csv(os.path.join(folder, "engineered_data.csv"), index=False, encoding="utf-8-sig")
+        self.refresh_workspace_list()  # [WORKSPACE] 저장 후 드롭다운 목록 갱신
+        self.status_label.setText(f"상태: 분석 저장 '{name}' 저장 완료")
+    # ================================================================
+
+    # ================================================================
+    # [WORKSPACE] 드롭다운 선택 후 불러오기 → workspaces/{이름}/ 폴더에서 복원
+    # ================================================================
+    def load_workspace(self):
+        name = self.ws_combo.currentText()
+        if not name:
+            self.status_label.setText("상태: 불러올 분석 저장을 선택해 주세요")
+            return
+        folder = os.path.join("workspaces", name)
+        state_path = os.path.join(folder, "state.json")
+        if not os.path.exists(state_path):
+            self.status_label.setText("상태: 분석 저장 파일을 찾을 수 없습니다")
+            return
+        with open(state_path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+        saved_file = state.get("file_path")
+        if saved_file and os.path.exists(saved_file):
+            self.data_engine.set_file_path(saved_file)
+            self.file_path_label.setText(f"파일: {os.path.basename(saved_file)}")
+        self.model_combo.setCurrentIndex(state.get("model_combo_index", 0))
+        self.iter_spin.setValue(state.get("max_iter", 2000))
+        for k, v in state.get("inputs", {}).items():
+            if k in self.inputs:
+                self.inputs[k].setText(v)
+
+        # [WORKSPACE] 전처리 설정값 복원
+        pre = state.get("preprocessing", {})
+        if pre:
+            self.missing_combo.blockSignals(True)
+            self.outlier_combo.blockSignals(True)
+            self.invalid_type_combo.blockSignals(True)
+            self.iqr_spin.blockSignals(True)
+            self.training_input_combo.blockSignals(True)
+            self.missing_combo.setCurrentIndex(pre.get("missing_combo", 0))
+            self.outlier_combo.setCurrentIndex(pre.get("outlier_combo", 0))
+            self.invalid_type_combo.setCurrentIndex(pre.get("invalid_type_combo", 0))
+            self.iqr_spin.setValue(pre.get("iqr_spin", 1.5))
+            self.training_input_combo.setCurrentIndex(pre.get("training_input_combo", 0))
+            self.preprocessing_ready = pre.get("preprocessing_ready", False)
+            self.train_btn.setEnabled(self.preprocessing_ready)
+            self.go_to_training_btn.setEnabled(self.preprocessing_ready)
+            self.missing_combo.blockSignals(False)
+            self.outlier_combo.blockSignals(False)
+            self.invalid_type_combo.blockSignals(False)
+            self.iqr_spin.blockSignals(False)
+            self.training_input_combo.blockSignals(False)
+
+        # [WORKSPACE] 전처리 결과 테이블 복원 (CSV)
+        pre_csv = os.path.join(folder, "preprocessed_data.csv")
+        if os.path.exists(pre_csv):
+            pre_df = pd.read_csv(pre_csv, encoding="utf-8-sig")
+            self.populate_processed_preview(pre_df)
+
+        # [WORKSPACE] 합금 지표 결과 테이블 복원 (CSV)
+        eng_csv = os.path.join(folder, "engineered_data.csv")
+        if os.path.exists(eng_csv):
+            eng_df = pd.read_csv(eng_csv, encoding="utf-8-sig")
+            self.engineered_preview_table.clear()
+            self.engineered_preview_table.setRowCount(len(eng_df))
+            self.engineered_preview_table.setColumnCount(len(eng_df.columns))
+            self.engineered_preview_table.setHorizontalHeaderLabels([str(c) for c in eng_df.columns])
+            for r, (_, row) in enumerate(eng_df.iterrows()):
+                for c, val in enumerate(row):
+                    text = "" if pd.isna(val) else f"{float(val):.4g}" if isinstance(val, (int, float, np.integer, np.floating)) else str(val)
+                    item = QTableWidgetItem(text)
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    self.engineered_preview_table.setItem(r, c, item)
+            self.engineered_preview_table.resizeColumnsToContents()
+
+        # [WORKSPACE] 그래프 이미지 복원 (폴더 내 PNG)
+        for img_file, canvas_fn in [
+            ("training.png",    lambda img: (self.canvas.axes.clear(), self.canvas.axes.imshow(img), self.canvas.axes.axis("off"), self.canvas.draw())),
+            ("performance.png", lambda img: (self.perf_canvas.figure.clear(), self.perf_canvas.figure.add_subplot(111).imshow(img), self.perf_canvas.figure.axes[0].axis("off"), self.perf_canvas.draw())),
+            ("prediction.png",  lambda img: (self.prediction_canvas.axes.clear(), self.prediction_canvas.axes.imshow(img), self.prediction_canvas.axes.axis("off"), self.prediction_canvas.draw())),
+        ]:
+            path = os.path.join(folder, img_file)
+            if os.path.exists(path):
+                canvas_fn(plt.imread(path))
+        self.status_label.setText(f"상태: 분석 저장 '{name}' 복원 완료")
+    # ================================================================
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
